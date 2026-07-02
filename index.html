@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1f2937" />
+    <title>Punch Clock</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="card">
+        <div class="top-row">
+          <div>
+            <p class="eyebrow">PWA Punch Clock</p>
+            <h1>Job timer</h1>
+          </div>
+          <span id="connectionStatus" class="status signed-out">Signed out</span>
+        </div>
+
+        <div class="clock-panel" aria-live="polite">
+          <p id="currentDate" class="date">Loading date…</p>
+          <p id="currentTime" class="time">--:--:--</p>
+        </div>
+
+        <div id="accountPanel" class="account-panel hidden">
+          <img id="accountAvatar" alt="" class="avatar hidden" />
+          <div>
+            <p id="accountName" class="account-name"></p>
+            <p id="accountEmail" class="account-email"></p>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="signInButton" class="button secondary" type="button">Sign in with Google</button>
+          <button id="startButton" class="button start" type="button" disabled>Start job</button>
+          <button id="endButton" class="button end" type="button" disabled>End job</button>
+        </div>
+
+        <p id="message" class="message" role="status"></p>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
