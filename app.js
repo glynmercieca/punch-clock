@@ -10,7 +10,7 @@
 */
 
 const CONFIG = {
-  CLIENT_ID: 'PASTE_YOUR_GOOGLE_OAUTH_CLIENT_ID_HERE',
+  CLIENT_ID: '898150360212-1pv0qasjo0pi6fngasu06940jej5gmqh.apps.googleusercontent.com',
   SPREADSHEET_ID: '1wCZYkXgZ_oQT2Q5FwnWlgQNzQHWYdO35CibUX-OZtWo',
   // Leave blank to automatically use the first tab in the spreadsheet.
   SHEET_NAME: '',
