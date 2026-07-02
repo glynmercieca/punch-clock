@@ -90,6 +90,15 @@ http://localhost:8000
 - After starting, **Start job** is disabled and **End job** is enabled.
 - **End job** updates the same row's To column with the current time.
 - The active job row is stored in browser `localStorage`, so refreshing the page keeps the End job button enabled.
+- Dates are written to Google Sheets as `YYYY-MM-DD`.
+- Times are written to Google Sheets as `HH:mm`.
+- The app footer shows the deployed version from `version.json`.
+
+## Versioning
+
+The repository includes `scripts/bump-version.sh`, which increments the patch version in `version.json`.
+
+The GitHub Actions workflow at `.github/workflows/bump-version-on-push.yml` runs that script after every push and commits the new version back to the branch automatically.
 
 ## Customization
 

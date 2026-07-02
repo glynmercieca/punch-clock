@@ -33,6 +33,7 @@ const els = {
   startButton: document.getElementById('startButton'),
   endButton: document.getElementById('endButton'),
   message: document.getElementById('message'),
+  version: document.getElementById('version'),
   connectionStatus: document.getElementById('connectionStatus'),
   accountPanel: document.getElementById('accountPanel'),
   accountAvatar: document.getElementById('accountAvatar'),
@@ -49,6 +50,7 @@ function init() {
   updateClock();
   setInterval(updateClock, 1000);
   registerServiceWorker();
+  loadVersion();
 
   els.signInButton.addEventListener('click', signIn);
   els.startButton.addEventListener('click', startJob);
@@ -246,20 +248,19 @@ function updateClock() {
 }
 
 function formatDate(date) {
-  return new Intl.DateTimeFormat(undefined, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(date);
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+  ].join('-');
 }
 
 function formatTime(date) {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(date);
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function pad(value) {
+  return String(value).padStart(2, '0');
 }
 
 function extractRowNumber(range) {
@@ -294,6 +295,20 @@ function registerServiceWorker() {
     navigator.serviceWorker.register('./sw.js').catch(() => {
       // The app still works without offline caching.
     });
+  }
+}
+
+async function loadVersion() {
+  if (!els.version) return;
+
+  try {
+    const response = await fetch('./version.json', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Version file not available.');
+
+    const data = await response.json();
+    els.version.textContent = `Version ${data.version || 'unknown'}`;
+  } catch {
+    els.version.textContent = 'Version unavailable';
   }
 }
 
