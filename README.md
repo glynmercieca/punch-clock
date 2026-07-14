@@ -28,17 +28,17 @@ Date | From | To
 
 Make sure the Google account signing in has edit access to the spreadsheet.
 
-### 2. Create a Google OAuth Client ID
+### 2. Configure Firebase Authentication
 
-1. Open Google Cloud Console.
-2. Create or select a project.
-3. Enable **Google Sheets API**.
-4. Configure the OAuth consent screen.
-5. Create an OAuth Client ID:
-   - Application type: **Web application**
-   - Authorized JavaScript origins:
-     - `http://localhost:8000` for local testing
-     - `https://YOUR_GITHUB_USERNAME.github.io` for GitHub Pages
+1. In Firebase Console, open the `punch-clock-4da13` project.
+2. Go to **Authentication** → **Sign-in method** and enable **Google**.
+3. Go to **Authentication** → **Settings** → **Authorized domains** and add:
+   - `localhost` for local testing
+   - `YOUR_GITHUB_USERNAME.github.io` for GitHub Pages
+4. In the Firebase project's linked Google Cloud project, enable the **Google Sheets API**.
+5. Configure the OAuth consent screen. The app requests the Google Sheets scope when a user signs in.
+
+Firebase keeps the authentication session across browser restarts and refreshes its own ID token automatically. Google Sheets access is a separate Google OAuth token: the app retains it for up to 55 minutes, then the user must select **Refresh Google access** to obtain a new one. A browser-only Firebase app cannot securely retain a Google refresh token indefinitely.
 
 For a project site, your final app URL will usually be:
 
@@ -46,23 +46,7 @@ For a project site, your final app URL will usually be:
 https://YOUR_GITHUB_USERNAME.github.io/YOUR_REPOSITORY_NAME/
 ```
 
-The authorized JavaScript origin should still be only:
-
-```text
-https://YOUR_GITHUB_USERNAME.github.io
-```
-
-### 3. Add your Client ID
-
-Open `app.js` and replace this line:
-
-```js
-CLIENT_ID: 'PASTE_YOUR_GOOGLE_OAUTH_CLIENT_ID_HERE',
-```
-
-with your real OAuth Client ID.
-
-### 4. Test locally
+### 3. Test locally
 
 From this folder, run:
 

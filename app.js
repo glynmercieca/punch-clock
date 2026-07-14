@@ -6,11 +6,29 @@
   B: From
   C: To
 
-  Before deploying, replace CLIENT_ID with your Google Cloud OAuth Client ID.
+  Authentication is handled by Firebase Authentication with the Google provider.
 */
 
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  browserLocalPersistence,
+  onAuthStateChanged,
+  setPersistence,
+  signInWithPopup,
+} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
+
 const CONFIG = {
-  CLIENT_ID: '898150360212-1pv0qasjo0pi6fngasu06940jej5gmqh.apps.googleusercontent.com',
+  FIREBASE: {
+    apiKey: 'AIzaSyA-NIbcUadW7ihdFm_BWshb_kKEq2drEPg',
+    authDomain: 'punch-clock-4da13.firebaseapp.com',
+    projectId: 'punch-clock-4da13',
+    storageBucket: 'punch-clock-4da13.firebasestorage.app',
+    messagingSenderId: '915576697535',
+    appId: '1:915576697535:web:229e389b0118cdb439cc0a',
+    measurementId: 'G-NGHPVYE233',
+  },
   SPREADSHEET_ID: '1wCZYkXgZ_oQT2Q5FwnWlgQNzQHWYdO35CibUX-OZtWo',
   // Leave blank to automatically use the first tab in the spreadsheet.
   SHEET_NAME: '',
@@ -19,12 +37,15 @@ const CONFIG = {
   TO_COLUMN: 'C',
 };
 
-const SCOPES = [
-  'openid',
-  'email',
-  'profile',
-  'https://www.googleapis.com/auth/spreadsheets',
-].join(' ');
+const firebaseApp = initializeApp(CONFIG.FIREBASE);
+const auth = getAuth(firebaseApp);
+const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
+
+// Firebase refreshes its own ID token automatically. Google API access tokens are
+// separate, short-lived credentials, so retain one only for its normal lifetime.
+const GOOGLE_ACCESS_TOKEN_KEY = 'googleSheetsAccess';
+const GOOGLE_ACCESS_TOKEN_LIFETIME_MS = 55 * 60 * 1000;
 
 const els = {
   currentDate: document.getElementById('currentDate'),
@@ -41,12 +62,12 @@ const els = {
   accountEmail: document.getElementById('accountEmail'),
 };
 
-let tokenClient;
 let accessToken = null;
+let googleAccessExpiresAt = 0;
 let sheetName = CONFIG.SHEET_NAME;
 let activeJob = loadActiveJob();
 
-function init() {
+async function init() {
   updateClock();
   setInterval(updateClock, 1000);
   registerServiceWorker();
@@ -56,38 +77,45 @@ function init() {
   els.startButton.addEventListener('click', startJob);
   els.endButton.addEventListener('click', endJob);
 
-  waitForGoogleIdentity();
-  updateButtonState();
-}
-
-function waitForGoogleIdentity() {
-  if (!window.google?.accounts?.oauth2) {
-    setTimeout(waitForGoogleIdentity, 100);
-    return;
-  }
-
-  tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: CONFIG.CLIENT_ID,
-    scope: SCOPES,
-    callback: async (response) => {
-      if (response.error) {
-        showMessage(`Sign in failed: ${response.error}`, true);
+  try {
+    await setPersistence(auth, browserLocalPersistence);
+    onAuthStateChanged(auth, async (user) => {
+      const savedAccess = loadGoogleAccess(user?.uid);
+      if (!savedAccess) {
+        accessToken = null;
+        updateButtonState();
         return;
       }
 
-      accessToken = response.access_token;
+      accessToken = savedAccess.token;
+      googleAccessExpiresAt = savedAccess.expiresAt;
       await afterSignIn();
-    },
-  });
+    });
+  } catch (error) {
+    showMessage(`Could not restore the sign-in session: ${error.message}`, true);
+    updateButtonState();
+  }
 }
 
-function signIn() {
-  if (CONFIG.CLIENT_ID.includes('PASTE_')) {
-    showMessage('Add your Google OAuth Client ID in app.js first.', true);
-    return;
-  }
+async function signIn() {
+  setBusy(true);
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    accessToken = credential?.accessToken || null;
 
-  tokenClient.requestAccessToken({ prompt: accessToken ? '' : 'consent' });
+    if (!accessToken) {
+      throw new Error('Firebase signed you in, but did not return Google Sheets access. Try signing in again.');
+    }
+
+    googleAccessExpiresAt = saveGoogleAccess(result.user.uid, accessToken);
+    await afterSignIn();
+  } catch (error) {
+    showMessage(`Sign in failed: ${error.message}`, true);
+  } finally {
+    setBusy(false);
+    updateButtonState();
+  }
 }
 
 async function afterSignIn() {
@@ -130,7 +158,7 @@ async function resolveSheetName() {
 }
 
 async function startJob() {
-  if (!ensureSignedIn()) return;
+  if (!(await ensureSignedIn())) return;
 
   setBusy(true);
   try {
@@ -161,7 +189,7 @@ async function startJob() {
 }
 
 async function endJob() {
-  if (!ensureSignedIn()) return;
+  if (!(await ensureSignedIn())) return;
   if (!activeJob?.rowNumber) {
     showMessage('No active job found. Start a job first.', true);
     updateButtonState();
@@ -207,6 +235,14 @@ async function googleFetch(url, options = {}) {
   const data = text ? JSON.parse(text) : {};
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearGoogleAccess();
+      accessToken = null;
+      googleAccessExpiresAt = 0;
+      updateButtonState();
+      throw new Error('Google Sheets access has expired. Select “Refresh Google access” and try again.');
+    }
+
     const message = data.error?.message || response.statusText || 'Google API request failed.';
     throw new Error(message);
   }
@@ -214,16 +250,27 @@ async function googleFetch(url, options = {}) {
   return data;
 }
 
-function ensureSignedIn() {
+async function ensureSignedIn() {
+  if (hasUsableGoogleAccess()) return true;
+
+  clearGoogleAccess();
+  accessToken = null;
+  googleAccessExpiresAt = 0;
+
+  if (auth.currentUser) {
+    await signIn();
+    return hasUsableGoogleAccess();
+  }
+
   if (!accessToken) {
     showMessage('Sign in with Google first.', true);
     return false;
   }
-  return true;
 }
 
 function updateButtonState() {
-  const signedIn = Boolean(accessToken);
+  // A persisted Firebase user can renew Google Sheets access from a Start/End click.
+  const signedIn = hasUsableGoogleAccess() || Boolean(auth.currentUser);
   els.startButton.disabled = !signedIn || Boolean(activeJob);
   els.endButton.disabled = !signedIn || !activeJob;
 }
@@ -288,6 +335,37 @@ function saveActiveJob(job) {
 
 function clearActiveJob() {
   localStorage.removeItem('activeJob');
+}
+
+function hasUsableGoogleAccess() {
+  return Boolean(accessToken) && googleAccessExpiresAt > Date.now();
+}
+
+function saveGoogleAccess(userId, token) {
+  const expiresAt = Date.now() + GOOGLE_ACCESS_TOKEN_LIFETIME_MS;
+  localStorage.setItem(
+    GOOGLE_ACCESS_TOKEN_KEY,
+    JSON.stringify({ userId, token, expiresAt })
+  );
+  return expiresAt;
+}
+
+function loadGoogleAccess(userId) {
+  if (!userId) return null;
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(GOOGLE_ACCESS_TOKEN_KEY));
+    if (saved?.userId === userId && saved.expiresAt > Date.now() && saved.token) return saved;
+  } catch {
+    // Treat malformed stored data as an expired credential.
+  }
+
+  clearGoogleAccess();
+  return null;
+}
+
+function clearGoogleAccess() {
+  localStorage.removeItem(GOOGLE_ACCESS_TOKEN_KEY);
 }
 
 function registerServiceWorker() {
