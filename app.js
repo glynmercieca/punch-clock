@@ -35,6 +35,9 @@ const CONFIG = {
   DATE_COLUMN: 'A',
   FROM_COLUMN: 'B',
   TO_COLUMN: 'C',
+  // Formula columns for Hours, Fees, and Paid. End job copies their formulas
+  // from the preceding row, letting Google Sheets adjust row references.
+  CALCULATED_COLUMNS: ['D', 'E', 'F'],
 };
 
 const firebaseApp = initializeApp(CONFIG.FIREBASE);
@@ -66,6 +69,7 @@ const els = {
 let accessToken = null;
 let googleAccessExpiresAt = 0;
 let sheetName = CONFIG.SHEET_NAME;
+const sheetIds = new Map();
 let activeJob = loadActiveJob();
 let isBusy = false;
 
@@ -146,15 +150,30 @@ async function loadGoogleProfile() {
 }
 
 async function resolveSheetName() {
-  if (sheetName) return;
+  await getSheetId(sheetName);
+}
+
+async function getSheetId(requestedSheetName) {
+  if (requestedSheetName && sheetIds.has(requestedSheetName)) {
+    return sheetIds.get(requestedSheetName);
+  }
 
   const data = await googleFetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SPREADSHEET_ID}?fields=sheets.properties.title`
+    `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SPREADSHEET_ID}?fields=sheets.properties(sheetId,title)`
   );
 
-  const firstSheet = data.sheets?.[0]?.properties?.title;
-  if (!firstSheet) throw new Error('Could not find a sheet tab in the spreadsheet.');
-  sheetName = firstSheet;
+  const sheets = data.sheets || [];
+  const matchingSheet = requestedSheetName
+    ? sheets.find(({ properties }) => properties?.title === requestedSheetName)
+    : sheets[0];
+
+  if (!matchingSheet?.properties?.title) {
+    throw new Error(`Could not find the ${requestedSheetName || 'first'} sheet tab.`);
+  }
+
+  sheetName = sheetName || matchingSheet.properties.title;
+  sheetIds.set(matchingSheet.properties.title, matchingSheet.properties.sheetId);
+  return matchingSheet.properties.sheetId;
 }
 
 async function startJob() {
@@ -200,15 +219,57 @@ async function endJob() {
   try {
     const time = formatTime(new Date());
     const targetSheet = activeJob.sheetName || sheetName;
-    const range = encodeURIComponent(`'${targetSheet}'!${CONFIG.TO_COLUMN}${activeJob.rowNumber}:${CONFIG.TO_COLUMN}${activeJob.rowNumber}`);
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SPREADSHEET_ID}/values/${range}?valueInputOption=USER_ENTERED`;
+    const sheetId = await getSheetId(targetSheet);
+    const formulaStartColumnIndex = columnToIndex(CONFIG.CALCULATED_COLUMNS[0]);
+    const formulaEndColumnIndex = columnToIndex(CONFIG.CALCULATED_COLUMNS.at(-1)) + 1;
+    const rowIndex = activeJob.rowNumber - 1;
 
-    await googleFetch(url, {
-      method: 'PUT',
-      body: JSON.stringify({ values: [[time]] }),
+    if (rowIndex < 1) {
+      throw new Error('Cannot copy calculated formulas because this job is on the first row.');
+    }
+
+    await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SPREADSHEET_ID}:batchUpdate`, {
+      method: 'POST',
+      body: JSON.stringify({
+        requests: [
+          {
+            updateCells: {
+              range: {
+                sheetId,
+                startRowIndex: rowIndex,
+                endRowIndex: rowIndex + 1,
+                startColumnIndex: columnToIndex(CONFIG.TO_COLUMN),
+                endColumnIndex: columnToIndex(CONFIG.TO_COLUMN) + 1,
+              },
+              rows: [{ values: [{ userEnteredValue: { stringValue: time } }] }],
+              fields: 'userEnteredValue',
+            },
+          },
+          {
+            copyPaste: {
+              source: {
+                sheetId,
+                startRowIndex: rowIndex - 1,
+                endRowIndex: rowIndex,
+                startColumnIndex: formulaStartColumnIndex,
+                endColumnIndex: formulaEndColumnIndex,
+              },
+              destination: {
+                sheetId,
+                startRowIndex: rowIndex,
+                endRowIndex: rowIndex + 1,
+                startColumnIndex: formulaStartColumnIndex,
+                endColumnIndex: formulaEndColumnIndex,
+              },
+              pasteType: 'PASTE_FORMULA',
+              pasteOrientation: 'NORMAL',
+            },
+          },
+        ],
+      }),
     });
 
-    showMessage(`Ended job at ${time}. Row ${activeJob.rowNumber} was updated.`);
+    showMessage(`Ended job at ${time}. Hours, Fees, and Paid were calculated for row ${activeJob.rowNumber}.`);
     activeJob = null;
     clearActiveJob();
   } catch (error) {
@@ -298,6 +359,13 @@ function formatTime(date) {
 
 function pad(value) {
   return String(value).padStart(2, '0');
+}
+
+function columnToIndex(column) {
+  return [...column.toUpperCase()].reduce(
+    (index, letter) => index * 26 + letter.charCodeAt(0) - 64,
+    0
+  ) - 1;
 }
 
 function extractRowNumber(range) {

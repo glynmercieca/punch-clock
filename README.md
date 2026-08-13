@@ -13,6 +13,9 @@ The app expects these columns on the first sheet tab:
 | A | Date | Start job |
 | B | From | Start job |
 | C | To | End job |
+| D | Hours | Formula copied from row above when ending a job |
+| E | Fees | Formula copied from row above when ending a job |
+| F | Paid | Formula copied from row above when ending a job |
 
 You can use any tab name. By default, the app automatically uses the first tab in the spreadsheet.
 
@@ -73,7 +76,7 @@ http://localhost:8000
 - **Start job** appends a new row with Date and From time.
 - **Start job** and **End job** request Google sign-in automatically when Google Sheets access is missing or expired, then continue the action after sign-in succeeds.
 - After starting, **Start job** is disabled and **End job** is enabled.
-- **End job** updates the same row's To column with the current time.
+- **End job** updates the same row's To column with the current time, then copies the formulas in the **Hours**, **Fees**, and **Paid** cells from the row above. Google Sheets adjusts their row references for the new row.
 - The active job row is stored in browser `localStorage`, so refreshing the page keeps the End job button enabled.
 - Dates are written to Google Sheets as `YYYY-MM-DD`.
 - Times are written to Google Sheets as `HH:mm`.
@@ -94,6 +97,7 @@ SHEET_NAME: '',       // leave blank to use the first sheet tab
 DATE_COLUMN: 'A',
 FROM_COLUMN: 'B',
 TO_COLUMN: 'C',
+CALCULATED_COLUMNS: ['D', 'E', 'F'], // Hours, Fees, Paid formula columns
 ```
 
 For example, if your tab is called `Timesheet`, set:
