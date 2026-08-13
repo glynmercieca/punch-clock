@@ -38,7 +38,7 @@ Make sure the Google account signing in has edit access to the spreadsheet.
 4. In the Firebase project's linked Google Cloud project, enable the **Google Sheets API**.
 5. Configure the OAuth consent screen. The app requests the Google Sheets scope when a user signs in.
 
-Firebase keeps the authentication session across browser restarts and refreshes its own ID token automatically. Google Sheets access is a separate Google OAuth token: the app retains it for up to 55 minutes, then the user must select **Refresh Google access** to obtain a new one. A browser-only Firebase app cannot securely retain a Google refresh token indefinitely.
+Firebase keeps the authentication session across browser restarts and refreshes its own ID token automatically. Google Sheets access is a separate Google OAuth token: the app retains it for up to 59 minutes. When it is missing or expired, clicking **Start job** or **End job** opens Google sign-in and then continues the selected action. A browser-only Firebase app cannot securely retain a Google refresh token indefinitely.
 
 For a project site, your final app URL will usually be:
 
@@ -71,6 +71,7 @@ http://localhost:8000
 ## How it works
 
 - **Start job** appends a new row with Date and From time.
+- **Start job** and **End job** request Google sign-in automatically when Google Sheets access is missing or expired, then continue the action after sign-in succeeds.
 - After starting, **Start job** is disabled and **End job** is enabled.
 - **End job** updates the same row's To column with the current time.
 - The active job row is stored in browser `localStorage`, so refreshing the page keeps the End job button enabled.

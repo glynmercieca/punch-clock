@@ -45,12 +45,13 @@ googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
 // Firebase refreshes its own ID token automatically. Google API access tokens are
 // separate, short-lived credentials, so retain one only for its normal lifetime.
 const GOOGLE_ACCESS_TOKEN_KEY = 'googleSheetsAccess';
-const GOOGLE_ACCESS_TOKEN_LIFETIME_MS = 55 * 60 * 1000;
+// Google browser API tokens normally last about one hour. Leave a small margin
+// before that limit so the next Start/End click can renew access before a call.
+const GOOGLE_ACCESS_TOKEN_LIFETIME_MS = 59 * 60 * 1000;
 
 const els = {
   currentDate: document.getElementById('currentDate'),
   currentTime: document.getElementById('currentTime'),
-  signInButton: document.getElementById('signInButton'),
   startButton: document.getElementById('startButton'),
   endButton: document.getElementById('endButton'),
   message: document.getElementById('message'),
@@ -66,6 +67,7 @@ let accessToken = null;
 let googleAccessExpiresAt = 0;
 let sheetName = CONFIG.SHEET_NAME;
 let activeJob = loadActiveJob();
+let isBusy = false;
 
 async function init() {
   updateClock();
@@ -73,7 +75,6 @@ async function init() {
   registerServiceWorker();
   loadVersion();
 
-  els.signInButton.addEventListener('click', signIn);
   els.startButton.addEventListener('click', startJob);
   els.endButton.addEventListener('click', endJob);
 
@@ -124,7 +125,6 @@ async function afterSignIn() {
     els.connectionStatus.textContent = 'Signed in';
     els.connectionStatus.classList.remove('signed-out');
     els.connectionStatus.classList.add('signed-in');
-    els.signInButton.textContent = 'Refresh Google access';
     showMessage(activeJob ? 'Signed in. You have an active job.' : 'Signed in. Ready to start a job.');
     updateButtonState();
   } catch (error) {
@@ -240,7 +240,7 @@ async function googleFetch(url, options = {}) {
       accessToken = null;
       googleAccessExpiresAt = 0;
       updateButtonState();
-      throw new Error('Google Sheets access has expired. Select “Refresh Google access” and try again.');
+      throw new Error('Google Sheets access has expired. Please try the action again to sign in and continue.');
     }
 
     const message = data.error?.message || response.statusText || 'Google API request failed.';
@@ -257,29 +257,19 @@ async function ensureSignedIn() {
   accessToken = null;
   googleAccessExpiresAt = 0;
 
-  if (auth.currentUser) {
-    await signIn();
-    return hasUsableGoogleAccess();
-  }
-
-  if (!accessToken) {
-    showMessage('Sign in with Google first.', true);
-    return false;
-  }
+  await signIn();
+  return hasUsableGoogleAccess();
 }
 
 function updateButtonState() {
-  // A persisted Firebase user can renew Google Sheets access from a Start/End click.
-  const signedIn = hasUsableGoogleAccess() || Boolean(auth.currentUser);
-  els.startButton.disabled = !signedIn || Boolean(activeJob);
-  els.endButton.disabled = !signedIn || !activeJob;
+  // Start and End remain available while signed out so either action can begin sign-in.
+  els.startButton.disabled = isBusy || Boolean(activeJob);
+  els.endButton.disabled = isBusy || !activeJob;
 }
 
-function setBusy(isBusy) {
-  els.startButton.disabled = true;
-  els.endButton.disabled = true;
-  els.signInButton.disabled = isBusy;
-  if (!isBusy) els.signInButton.disabled = false;
+function setBusy(busy) {
+  isBusy = busy;
+  updateButtonState();
 }
 
 function updateClock() {
