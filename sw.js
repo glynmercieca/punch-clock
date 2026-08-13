@@ -1,4 +1,4 @@
-const CACHE_NAME = 'punch-clock-v3';
+const CACHE_NAME = 'punch-clock-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -28,6 +28,12 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    fetch(event.request)
+      .then((response) => {
+        const cachedResponse = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cachedResponse));
+        return response;
+      })
+      .catch(() => caches.match(event.request).then((cached) => cached || Response.error()))
   );
 });
